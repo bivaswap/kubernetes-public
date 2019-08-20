@@ -22,20 +22,24 @@ systemctl daemon-reload
 systemctl restart docker
 curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
 cat <<EOF >/etc/apt/sources.list.d/kubernetes.list
-deb https://apt.kubernetes.io/ kubernetes-xenial main
+deb https://apt.kubernetes.io/ kubernetes-$(lsb_release -cs) main
 EOF
+
 apt-get update
 apt-get install -y kubelet kubeadm kubectl
 apt-mark hold kubelet kubeadm kubectl docker-ce docker-ce-cli
 systemctl enable kubelet
 systemctl start kubelet
 
-kubeadm init --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors=Swap,FileContent--proc-sys-net-bridge-bridge-nf-call-iptables,SystemVerification >> /root/kubeinit.log 2>&1
-mkdir /root/.kube
-cp /etc/kubernetes/admin.conf /root/.kube/config
-kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml > /dev/null 2>&1
+if [[ $(hostname) =~ .*master* ]]
+then
+    kubeadm init --pod-network-cidr=10.244.0.0/16
+    mkdir /root/.kube
+    cp /etc/kubernetes/admin.conf /root/.kube/config
+    kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+fi    
 
-# Generate Cluster join command
-echo "[TASK 12] Generate and save cluster join command to /joincluster.sh"
-joinCommand=$(kubeadm token create --print-join-command) 
-echo "$joinCommand --ignore-preflight-errors=Swap,FileContent--proc-sys-net-bridge-bridge-nf-call-iptables,SystemVerification" > /joincluster.sh
+if [[ $(hostname) =~ .*worker* ]]
+then
+    echo "Type in master node: kubeadm token create --print-join-command"
+fi
