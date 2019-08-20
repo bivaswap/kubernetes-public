@@ -29,3 +29,13 @@ apt-get install -y kubelet kubeadm kubectl
 apt-mark hold kubelet kubeadm kubectl docker-ce docker-ce-cli
 systemctl enable kubelet
 systemctl start kubelet
+
+kubeadm init --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors=Swap,FileContent--proc-sys-net-bridge-bridge-nf-call-iptables,SystemVerification >> /root/kubeinit.log 2>&1
+mkdir /root/.kube
+cp /etc/kubernetes/admin.conf /root/.kube/config
+kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml > /dev/null 2>&1
+
+# Generate Cluster join command
+echo "[TASK 12] Generate and save cluster join command to /joincluster.sh"
+joinCommand=$(kubeadm token create --print-join-command) 
+echo "$joinCommand --ignore-preflight-errors=Swap,FileContent--proc-sys-net-bridge-bridge-nf-call-iptables,SystemVerification" > /joincluster.sh
