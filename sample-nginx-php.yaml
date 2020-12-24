@@ -1,0 +1,120 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: nginx-config
+data:
+  nginx.conf: |
+    user  nginx;
+    worker_processes  2;
+
+    error_log  /var/log/nginx/error.log warn;
+    pid        /var/run/nginx.pid;
+    events {
+        worker_connections  1024;
+    }
+    http {
+      server {
+          listen 80 default_server;
+          charset utf-8;
+          access_log  /var/log/nginx/access.log;
+          error_log  /var/log/nginx/error.log;
+          root   /usr/share/nginx/html;
+
+          location / {
+            root /usr/share/nginx/html;
+            index  index.php index.html index.htm;
+          }
+
+          location ~ \.php$ {
+            root /usr/share/nginx/html;
+            try_files $uri =404;
+            fastcgi_split_path_info ^(.+\.php)(/.+)$;
+            fastcgi_pass localhost:9000;
+            fastcgi_index index.php;
+            include fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            fastcgi_param PATH_INFO $fastcgi_path_info;
+          }
+      }
+    }
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: www-data
+data:
+  index.php: |
+    <?php phpinfo(); ?>
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: php-nginx
+  labels:
+    app: php-nginx
+spec:
+  containers:
+  - name: php
+    image: bivaswap/my-php:v0.0.6
+    volumeMounts:
+    # - name: httpdocs
+    #   mountPath: /usr/share/nginx/html
+    - name: www-data
+      mountPath: /usr/share/nginx/html/index.php
+      subPath: index.php        
+    ports:
+    - containerPort: 9000
+  - name: nginx
+    image: nginx:latest
+    volumeMounts:
+    # - name: httpdocs
+    #   mountPath: /usr/share/nginx/html
+    - name: nginx-config
+      mountPath: /etc/nginx/nginx.conf
+      subPath: nginx.conf
+    - name: www-data
+      mountPath: /usr/share/nginx/html/index.php
+      subPath: index.php      
+    ports:
+    - containerPort: 80 
+  volumes:
+  # - name: httpdocs
+  #   hostPath:
+  #     path: /mnt/httpdocs
+  #     type: DirectoryOrCreate
+  - name: nginx-config
+    configMap:
+      name: nginx-config
+  - name: www-data
+    configMap:
+      name: www-data
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: nginx-svc
+spec:
+  type: ClusterIP
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+  selector:
+    app: php-nginx
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: name-virtual-host-ingress
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+  labels:
+    app: ingress-nginx
+spec:
+  rules:
+  - host: test.ecom-customer-dashb.bluejestic.com
+    http:
+      paths:
+      - backend:
+          serviceName: nginx-svc
+          servicePort: 80
