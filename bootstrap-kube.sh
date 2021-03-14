@@ -1,12 +1,18 @@
-apt-get update && apt-get install -y apt-transport-https ca-certificates curl software-properties-common
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-add-apt-repository \
-  "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
-  $(lsb_release -cs) \
-  stable"
+#!/bin/bash
 
-apt-get update && apt-get install -y docker-ce=5:18.09.8~3-0~ubuntu-bionic docker-ce-cli=5:18.09.8~3-0~ubuntu-bionic
-cat > /etc/docker/daemon.json <<EOF
+###############################################
+#  MAKE SURE MASTER HAS ATLEAST 2GB+ RAM      #
+#  MAKE SURE HOSTNAME CONTAIN 'master' WORD   #
+###############################################
+
+sudo apt update
+sudo apt install -y apt-transport-https ca-certificates curl gnupg-agent software-properties-common
+# sudo ln -s /dev/console /dev/kmsg
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+sudo apt update
+sudo apt-get install -y docker-ce=5:19.03.15~3-0~ubuntu-focal docker-ce-cli=5:19.03.15~3-0~ubuntu-focal containerd.io
+cat <<EOF | sudo tee /etc/docker/daemon.json
 {
   "exec-opts": ["native.cgroupdriver=systemd"],
   "log-driver": "json-file",
@@ -17,32 +23,44 @@ cat > /etc/docker/daemon.json <<EOF
 }
 EOF
 
-mkdir -p /etc/systemd/system/docker.service.d
-systemctl daemon-reload
-systemctl restart docker
-curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
-
-# At the time of writing only Ubuntu 16.04 Xenial Kubernetes repository is available.
-# Replace the below 'xenial' with 'bionic' codename once the Ubuntu 18.04 Kubernetes repository becomes available
-cat <<EOF >/etc/apt/sources.list.d/kubernetes.list
-deb https://apt.kubernetes.io/ kubernetes-xenial main
+sudo mkdir -p /etc/systemd/system/docker.service.d
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
 EOF
 
-apt-get update
-apt-get install -y kubelet kubeadm kubectl
-apt-mark hold kubelet kubeadm kubectl docker-ce docker-ce-cli
-systemctl enable kubelet
-systemctl start kubelet
+sudo sysctl --system
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
 
-if [[ $(hostname) =~ .*master* ]]
-then
-    kubeadm init --pod-network-cidr=10.244.0.0/16
-    mkdir /root/.kube
-    cp /etc/kubernetes/admin.conf /root/.kube/config
-    kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
-fi    
+cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+EOF
+sudo apt update
 
-if [[ $(hostname) =~ .*worker* ]]
+
+if [[ $(hostname) =~ .*master.* ]]
 then
-    echo "Type in master node: kubeadm token create --print-join-command"
+    sudo apt install -y kubelet kubeadm kubectl
+    sudo apt-mark hold kubelet kubeadm kubectl docker
+    #sudo kubeadm init --apiserver-advertise-address=`hostname --ip-address | awk '{print $2}'` --pod-network-cidr=10.244.0.0/16
+    sudo kubeadm init --pod-network-cidr=10.244.0.0/16
+    sudo mkdir /root/.kube
+    mkdir -p $HOME/.kube
+    sudo cp /etc/kubernetes/admin.conf /root/.kube/config
+    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+    sudo chown $(id -u):$(id -g) $HOME/.kube/config
+    kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+fi
+
+###############################################
+#  MAKE SURE MASTER HAS ATLEAST 2GB RAM       #
+#  MAKE SURE HOSTNAME CONTAIN 'worker' WORD   #
+###############################################
+
+if [[ $(hostname) =~ .*worker.* ]]
+then
+    sudo apt install -y kubelet kubeadm
+    sudo apt-mark hold kubelet docker
 fi
